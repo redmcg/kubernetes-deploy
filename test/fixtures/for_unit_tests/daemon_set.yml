@@ -11,7 +11,7 @@ spec:
   template:
     metadata:
       labels:
-        app: hello-cloud
+        app: ds-app
         name: ds-app
     spec:
       containers:

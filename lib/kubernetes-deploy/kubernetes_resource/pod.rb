@@ -101,6 +101,16 @@ module KubernetesDeploy
       exists? && !@stream_logs # don't print them a second time
     end
 
+    def ready?
+      return false unless (status_data = @instance_data["status"])
+      ready_condition = status_data.fetch("conditions", []).find { |condition| condition["type"] == "Ready" }
+      ready_condition.present? && (ready_condition["status"] == "True")
+    end
+
+    def node_name
+      @instance_data.dig('spec', 'nodeName')
+    end
+
     private
 
     def failed_schedule_reason
@@ -158,12 +168,6 @@ module KubernetesDeploy
       return false if ready? || unmanaged?
       return false if phase != "Running"
       @containers.any?(&:readiness_fail_reason)
-    end
-
-    def ready?
-      return false unless (status_data = @instance_data["status"])
-      ready_condition = status_data.fetch("conditions", []).find { |condition| condition["type"] == "Ready" }
-      ready_condition.present? && (ready_condition["status"] == "True")
     end
 
     def update_container_statuses(status_data)

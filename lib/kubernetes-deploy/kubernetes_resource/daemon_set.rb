@@ -8,6 +8,7 @@ module KubernetesDeploy
     def sync(cache)
       super
       @pods = exists? ? find_pods(cache) : []
+      @nodes = find_nodes(cache)
     end
 
     def status
@@ -17,8 +18,11 @@ module KubernetesDeploy
 
     def deploy_succeeded?
       return false unless exists?
-      rollout_data["desiredNumberScheduled"].to_i == rollout_data["updatedNumberScheduled"].to_i &&
-      rollout_data["desiredNumberScheduled"].to_i == rollout_data["numberReady"].to_i &&
+
+      considered_pods = @pods.select { |p| @nodes.map(&:name).include?(p.node_name) }
+      (rollout_data["desiredNumberScheduled"].to_i == rollout_data["updatedNumberScheduled"].to_i &&
+        ((rollout_data["desiredNumberScheduled"].to_i == rollout_data["numberReady"].to_i) ||
+          (!considered_pods.empty? && considered_pods.all?(&:ready?)))) &&
       current_generation == observed_generation
     end
 
@@ -37,6 +41,31 @@ module KubernetesDeploy
     end
 
     private
+
+    class Node
+      attr_reader :name
+
+      class << self
+        def kind
+          name.demodulize
+        end
+      end
+
+      def initialize(definition:)
+        @name = definition.dig("metadata", "name").to_s
+        @definition = definition
+      end
+    end
+
+    def find_nodes(cache)
+      # FIXME: should this also exclude tainted nodes?
+      all_nodes = cache.get_all(Node.kind)
+
+      all_nodes.each_with_object([]) do |node_data, nodes|
+        node = Node.new(definition: node_data)
+        nodes << node
+      end
+    end
 
     def rollout_data
       return { "currentNumberScheduled" => 0 } unless exists?
