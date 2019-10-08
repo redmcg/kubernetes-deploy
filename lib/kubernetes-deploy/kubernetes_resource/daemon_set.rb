@@ -8,7 +8,7 @@ module KubernetesDeploy
     def sync(cache)
       super
       @pods = exists? ? find_pods(cache) : []
-      @nodes = find_nodes(cache)
+      @nodes ||= find_nodes(cache).presence
     end
 
     def status
@@ -18,12 +18,9 @@ module KubernetesDeploy
 
     def deploy_succeeded?
       return false unless exists?
-
-      considered_pods = @pods.select { |p| @nodes.map(&:name).include?(p.node_name) }
-      (rollout_data["desiredNumberScheduled"].to_i == rollout_data["updatedNumberScheduled"].to_i &&
-        ((rollout_data["desiredNumberScheduled"].to_i == rollout_data["numberReady"].to_i) ||
-          (!considered_pods.empty? && considered_pods.all?(&:ready?)))) &&
-      current_generation == observed_generation
+      current_generation == observed_generation &&
+        rollout_data["desiredNumberScheduled"].to_i == rollout_data["updatedNumberScheduled"].to_i &&
+        relevant_pods_ready?
     end
 
     def deploy_failed?
@@ -57,8 +54,14 @@ module KubernetesDeploy
       end
     end
 
+    def relevant_pods_ready?
+      return true if rollout_data["desiredNumberScheduled"].to_i == rollout_data["numberReady"].to_i # all pods ready
+      relevant_node_names = @nodes.map(&:name)
+      considered_pods = @pods.select { |p| relevant_node_names.include?(p.node_name) }
+      considered_pods.present? && considered_pods.all?(&:deploy_succeeded?)
+    end
+
     def find_nodes(cache)
-      # FIXME: should this also exclude tainted nodes?
       all_nodes = cache.get_all(Node.kind)
 
       all_nodes.each_with_object([]) do |node_data, nodes|

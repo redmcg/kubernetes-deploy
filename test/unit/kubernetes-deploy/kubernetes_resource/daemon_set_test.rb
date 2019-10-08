@@ -4,7 +4,7 @@ require 'test_helper'
 class DaemonSetTest < KubernetesDeploy::TestCase
   include ResourceCacheTestHelper
 
-  OWNER_UID = 'c31a9b4e-e6dd-11e9-8f47-e6322f98393a'
+
 
   def test_deploy_not_successful_when_updated_available_does_not_match
     ds_template = build_ds_template(filename: 'daemon_set.yml')
@@ -50,20 +50,20 @@ class DaemonSetTest < KubernetesDeploy::TestCase
       "desiredNumberScheduled": 1,
       "updatedNumberScheduled": 1,
     }
-    ds_template = build_ds_template(filename: 'daemon_set.yml', uid: OWNER_UID, generation: 2, status: status)
+    ds_template = build_ds_template(filename: 'daemon_set.yml', generation: 2, status: status)
     pod_template = build_pod_template(filename: 'daemon_set_pod.yml')
     node_template = build_node_template(filename: 'node.yml')
     ds = build_synced_ds(ds_template: ds_template, pod_templates: pod_template, node_templates: node_template)
     assert_predicate(ds, :deploy_succeeded?)
   end
 
-  def test_deploy_passes_when_ready_pods_for_multiple_nodes
+  def test_deploy_passes_when_ready_pods_but_node_added
     status = {
-      "desiredNumberScheduled": 3,
-      "updatedNumberScheduled": 3,
-      "numberReady": 2,
+      "desiredNumberScheduled": 2,
+      "updatedNumberScheduled": 2,
+      "numberReady": 1,
     }
-    ds_template = build_ds_template(filename: 'daemon_set.yml', uid: OWNER_UID, generation: 2, status: status)
+    ds_template = build_ds_template(filename: 'daemon_set.yml', generation: 2, status: status)
     pod_template = build_pod_template(filename: 'daemon_set_pod.yml')
     node_template = build_node_template(filename: 'node.yml')
     ds = build_synced_ds(ds_template: ds_template, pod_templates: pod_template, node_templates: node_template)
@@ -72,11 +72,11 @@ class DaemonSetTest < KubernetesDeploy::TestCase
 
   def test_deploy_fails_when_not_all_pods_updated
     status = {
-      "desiredNumberScheduled": 3,
-      "updatedNumberScheduled": 2,
-      "numberReady": 2,
+      "desiredNumberScheduled": 2,
+      "updatedNumberScheduled": 1,
+      "numberReady": 1,
     }
-    ds_template = build_ds_template(filename: 'daemon_set.yml', uid: OWNER_UID, generation: 2, status: status)
+    ds_template = build_ds_template(filename: 'daemon_set.yml', generation: 2, status: status)
     pod_template = build_pod_template(filename: 'daemon_set_pod.yml')
     node_template = build_node_template(filename: 'node.yml')
     ds = build_synced_ds(ds_template: ds_template, pod_templates: pod_template, node_templates: node_template)
@@ -85,10 +85,9 @@ class DaemonSetTest < KubernetesDeploy::TestCase
 
   private
 
-  def build_ds_template(filename:, status: {}, uid: nil, generation: nil)
+  def build_ds_template(filename:, status: {}, generation: nil)
     base_ds_manifest = YAML.load_stream(File.read(File.join(fixture_path('for_unit_tests'), filename))).first
     base_ds_manifest.deep_merge!("status" => status)
-    base_ds_manifest['metadata']['uid'] = uid if uid
     base_ds_manifest['spec']['templateGeneration'] = generation if generation
     base_ds_manifest
   end
@@ -107,11 +106,11 @@ class DaemonSetTest < KubernetesDeploy::TestCase
     end
   end
 
-  def build_synced_ds(ds_template:, pod_templates: nil, node_templates: nil)
+  def build_synced_ds(ds_template:, pod_templates: [], node_templates: [])
     ds = KubernetesDeploy::DaemonSet.new(namespace: "test", context: "nope", logger: logger, definition: ds_template)
     stub_kind_get("DaemonSet", items: [ds_template])
-    stub_kind_get("Pod", items: pod_templates || [])
-    stub_kind_get("Node", items: node_templates || [])
+    stub_kind_get("Pod", items: pod_templates)
+    stub_kind_get("Node", items: node_templates)
     ds.sync(build_resource_cache)
     ds
   end
