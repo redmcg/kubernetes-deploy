@@ -4,8 +4,6 @@ require 'test_helper'
 class DaemonSetTest < KubernetesDeploy::TestCase
   include ResourceCacheTestHelper
 
-
-
   def test_deploy_not_successful_when_updated_available_does_not_match
     ds_template = build_ds_template(filename: 'daemon_set.yml')
     ds = build_synced_ds(ds_template: ds_template)
@@ -59,13 +57,24 @@ class DaemonSetTest < KubernetesDeploy::TestCase
 
   def test_deploy_passes_when_ready_pods_but_node_added
     status = {
-      "desiredNumberScheduled": 2,
-      "updatedNumberScheduled": 2,
-      "numberReady": 1,
+      "desiredNumberScheduled": 1,
+      "updatedNumberScheduled": 1,
+      "numberReady": 0,
     }
     ds_template = build_ds_template(filename: 'daemon_set.yml', generation: 2, status: status)
-    pod_template = build_pod_template(filename: 'daemon_set_pod.yml')
+    pod_template = build_pod_template(filename: 'daemon_set_pod_not_ready.yml')
     node_template = build_node_template(filename: 'node.yml')
+    ds = build_synced_ds(ds_template: ds_template, pod_templates: pod_template, node_templates: node_template)
+    refute_predicate(ds, :deploy_succeeded?)
+
+    node_added_status = {
+      "desiredNumberScheduled": 3,
+      "updatedNumberScheduled": 3,
+      "numberReady": 1,
+    }
+    ds_template = build_ds_template(filename: 'daemon_set.yml', generation: 2, status: node_added_status)
+    pod_template = build_pod_template(filename: 'daemon_set_pod.yml')
+    node_template = build_node_template(filename: 'nodes.yml')
     ds = build_synced_ds(ds_template: ds_template, pod_templates: pod_template, node_templates: node_template)
     assert_predicate(ds, :deploy_succeeded?)
   end
@@ -83,6 +92,19 @@ class DaemonSetTest < KubernetesDeploy::TestCase
     refute_predicate(ds, :deploy_succeeded?)
   end
 
+  def test_deploy_fails_when_not_all_pods_ready
+    status = {
+      "desiredNumberScheduled": 3,
+      "updatedNumberScheduled": 3,
+      "numberReady": 2,
+    }
+    ds_template = build_ds_template(filename: 'daemon_set.yml', generation: 2, status: status)
+    pod_template = build_pod_template(filename: 'daemon_set_pods.yml')
+    node_template = build_node_template(filename: 'nodes.yml')
+    ds = build_synced_ds(ds_template: ds_template, pod_templates: pod_template, node_templates: node_template)
+    refute_predicate(ds, :deploy_succeeded?)
+  end
+
   private
 
   def build_ds_template(filename:, status: {}, generation: nil)
@@ -94,7 +116,11 @@ class DaemonSetTest < KubernetesDeploy::TestCase
 
   def build_pod_template(filename:)
     base_pod_manifest = YAML.load(File.read(File.join(fixture_path('for_unit_tests'), filename)))
-    [base_pod_manifest].flatten
+    if base_pod_manifest['kind'] == 'List'
+      base_pod_manifest['items']
+    else
+      [base_pod_manifest].flatten
+    end
   end
 
   def build_node_template(filename:)
