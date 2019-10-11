@@ -137,7 +137,7 @@ module Krane
     end
 
     def logs
-      @logs ||= KubernetesDeploy::RemoteLogs.new(
+      @logs ||= Krane::RemoteLogs.new(
         logger: @logger,
         parent_id: id,
         container_names: @containers.map(&:name),
